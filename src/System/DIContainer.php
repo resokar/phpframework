@@ -17,6 +17,32 @@ class DIContainer
     private array $resolving = [];
 
     /**
+     * Register or replace a shared instance. Existing consumers retain their references.
+     *
+     * @template T of object
+     * @param class-string<T> $class
+     * @param T $instance
+     */
+    public function set(string $class, object $instance): void
+    {
+        try {
+            $reflection = new ReflectionClass($class);
+        } catch (Throwable $exception) {
+            throw $this->failure("Unknown class {$class}", $class, $exception);
+        }
+
+        $name = $reflection->getName();
+        if (!$instance instanceof $name) {
+            throw $this->failure("Instance must be of type {$name}", $name);
+        }
+        if (isset($this->resolving[$name])) {
+            throw $this->failure("Cannot register {$name} while it is being resolved", $name);
+        }
+
+        $this->instances[$name] = $instance;
+    }
+
+    /**
      * @template T of object
      * @param class-string<T> $class
      * @return T

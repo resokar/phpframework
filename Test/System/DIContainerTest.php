@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Resokar\Phpframework\Test\System;
 
 use LogicException;
+use PDO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Resokar\Phpframework\System\DIContainer;
@@ -11,6 +12,85 @@ use RuntimeException;
 
 final class DIContainerTest extends TestCase
 {
+    public function testRegisteredPdoIsSharedAndInjected(): void
+    {
+        $container = new DIContainer();
+        $pdo = $this->createStub(PDO::class);
+        $container->set(strtolower(PDO::class), $pdo);
+
+        self::assertSame($pdo, $container->get(PDO::class));
+        self::assertSame($pdo, $container->get(strtolower(PDO::class)));
+        self::assertSame($pdo, $container->get(PdoConsumer::class)->pdo);
+    }
+
+    public function testRegistersInterfaceImplementationAndSubclass(): void
+    {
+        $container = new DIContainer();
+        $implementation = new class implements Contract {};
+        $container->set(Contract::class, $implementation);
+        self::assertSame($implementation, $container->get(Contract::class));
+        self::assertSame($implementation, $container->get(ContractConsumer::class)->value);
+
+        $leaf = new class extends Leaf {};
+        $container->set(Leaf::class, $leaf);
+        self::assertSame($leaf, $container->get(Branch::class)->leaf);
+    }
+
+    public function testReplacementPreservesExistingConsumerReferences(): void
+    {
+        $container = new DIContainer();
+        $branch = $container->get(Branch::class);
+        $original = $branch->leaf;
+        $replacement = new Leaf();
+        $container->set(Leaf::class, $replacement);
+
+        self::assertSame($replacement, $container->get(Leaf::class));
+        self::assertSame($original, $container->get(Branch::class)->leaf);
+
+        $next = new Leaf();
+        $container->set(strtolower(Leaf::class), $next);
+        self::assertSame($next, $container->get(Leaf::class));
+    }
+
+    public function testRejectsIncompatibleRegistrationWithoutReplacingInstance(): void
+    {
+        $container = new DIContainer();
+        $original = $container->get(Leaf::class);
+        try {
+            $container->set(Leaf::class, new \stdClass());
+            self::fail('Expected registration to fail');
+        } catch (RuntimeException $exception) {
+            self::assertStringContainsString('Instance must be of type ' . Leaf::class, $exception->getMessage());
+            self::assertStringContainsString('dependency chain:', $exception->getMessage());
+        }
+        self::assertSame($original, $container->get(Leaf::class));
+    }
+
+    public function testRejectsUnknownRegistrationType(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Unknown class ' . __NAMESPACE__ . '\\MissingClass');
+        (new DIContainer())->set(__NAMESPACE__ . '\\MissingClass', new Leaf());
+    }
+
+    public function testRejectsRegistrationDuringResolutionAndAllowsRetry(): void
+    {
+        $container = new DIContainer();
+        $container->set(DIContainer::class, $container);
+        for ($attempt = 0; $attempt < 2; ++$attempt) {
+            try {
+                $container->get(RegisteringService::class);
+                self::fail('Expected registration to fail');
+            } catch (RuntimeException $exception) {
+                self::assertStringContainsString(
+                    'Cannot register ' . RegisteringService::class . ' while it is being resolved',
+                    $exception->getMessage(),
+                );
+                self::assertStringContainsString('dependency chain:', $exception->getMessage());
+            }
+        }
+    }
+
     public function testRecursivelyResolvesAndSharesInstances(): void
     {
         $container = new DIContainer();
@@ -96,6 +176,21 @@ final class DIContainerTest extends TestCase
 }
 
 class Leaf {}
+class PdoConsumer
+{
+    public function __construct(public PDO $pdo) {}
+}
+class ContractConsumer
+{
+    public function __construct(public Contract $value) {}
+}
+class RegisteringService
+{
+    public function __construct(DIContainer $container)
+    {
+        $container->set(self::class, $this);
+    }
+}
 class Branch
 {
     public function __construct(public Leaf $leaf) {}
