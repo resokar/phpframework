@@ -1,0 +1,6 @@
+/.idea/
+/.ddev/
+/vendor/
+/.phpunit.cache/
+/to_do
+AGENTS.md

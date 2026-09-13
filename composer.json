@@ -1,0 +1,22 @@
+{
+    "name": "resokar/phpframework",
+    "description": "PHP Framework",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Resokar\\Phpframework\\": "src/",
+            "App\\Example\\": "example/"
+        }
+    },
+    "require": {
+        "php": "^8.5",
+        "ext-pdo": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^13.0"
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}
